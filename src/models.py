@@ -4,7 +4,18 @@ from torch.utils.data import DataLoader
 import torch.nn as nn
 import torch.nn.functional as F
 
+
+from typing import Tuple, Dict, List, Any
 from tqdm import tqdm #type: ignore
+
+# load config from../config.json
+def load_config():
+    import json
+    with open('../config.json', 'r') as f:
+        config = json.load(f)
+    return config
+
+config = load_config()
 
 class MNISTConvNet(nn.Module):
     def __init__(self):
@@ -26,6 +37,7 @@ class MNISTConvNet(nn.Module):
     
     
 class MNISTConvNetTrainer():
+
     def __init__(self, model, train_loader, test_loader, lr=0.001, device='mps'):
         self.model = model
         self.train_loader = train_loader
@@ -40,6 +52,7 @@ class MNISTConvNetTrainer():
 
     def train(self, num_epochs):
         self.model.train()
+
         for epoch in tqdm(range(num_epochs)):
             epoch_loss = 0
             correct = 0
@@ -91,6 +104,53 @@ class MNISTConvNetTrainer():
         torch.save(self.model.state_dict(), path)
         print(f'Model saved to {path}')
 
+
+
+class MNISTFederatedClient():
+    def __init__(self, k: int, local_epochs:int, local_dataset: DataLoader, lr:float, model_state: Dict) -> None:
+        self.k = k
+        self.model = MNISTConvNet()
+        self.model.load_state_dict(model_state)
+
+        self.epochs = local_epochs
+        self.optimizer = torch.optim.SGD(self.model.parameters(), lr=lr)
+        self.local_dataset = local_dataset
+    
+    def __call__(self):
+        # training with federated learning
+        self.model.train()
+        for epoch in range(self.epochs):
+            for images, labels in self.local_dataset:
+                images, labels = images.to(self.device), labels.to(self.device)
+                self.optimizer.zero_grad()
+                outputs = self.model(images)
+
+                # only updating local weights
+                loss = F.cross_entropy(outputs, labels)
+                loss.backward()
+                self.optimizer.step()
+
+        # return local model state
+        return self.model.state_dict()
+
+
+class MNISTFederatedServer():
+    def __init__(self, k: int, lr: float, model_state: Dict) -> None:
+        self.k = k
+        self.model = MNISTConvNet()
+        self.optimizer = torch.optim.SGD(self.model.parameters(), lr=lr)
+
+    def aggregate(self, local_states: List[Dict]):
+        # aggregate local model states
+        for key in self.model.state_dict().keys():
+            self.model.state_dict()[key] = sum([state[key] for state in local_states]) / len(local_states)
+        
+    def start_train(self, clients: List[MNISTFederatedClient]):
+        # aggregate local model states
+        local_states = [client() for client in clients]
+        self.aggregate(local_states)
+
+
 # create MNIST dataloader
 def get_mnist_dataloader(batch_size):
     # define transformations
@@ -100,15 +160,14 @@ def get_mnist_dataloader(batch_size):
     ])
 
     # download and load the MNIST dataset
-    train_dataset = datasets.MNIST(root='./data', train=True, transform=transform, download=True)
-    test_dataset = datasets.MNIST(root='./data', train=False, transform=transform)
-    # create a split for validation
+    train_dataset = datasets.MNIST(root=config['datapath'], train=True, transform=transform, download=True)
+    test_dataset = datasets.MNIST(root=config['datapath'], train=False, transform=transform)
     train_dataset, val_dataset = torch.utils.data.random_split(train_dataset, [50000, 10000])
 
     # create data loaders
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+    test_loader  = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+    val_loader   = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
 
     return train_loader, val_loader, test_loader
 
