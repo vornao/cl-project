@@ -3,3 +3,6 @@
 .test
 .idea
 .vscode
+data
+*/__pycache__
+.mypy_cache
