@@ -1,17 +1,18 @@
 import torch
 from torchvision import datasets, transforms  # type: ignore
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, RandomSampler, Subset
 import torch.nn as nn
 import torch.nn.functional as F
 
 
 from typing import Tuple, Dict, List, Any
 from tqdm import tqdm  # type: ignore
-
+from joblib import Parallel, delayed
 
 # load config from../config.json
 def load_config():
     import json
+
 
     with open("../config.json", "r") as f:
         config = json.load(f)
@@ -20,14 +21,14 @@ def load_config():
 
 config = load_config()
 
-
 class MNISTConvNet(nn.Module):
     def __init__(self):
         super(MNISTConvNet, self).__init__()
-        self.conv1 = nn.Conv2d(1, 2, kernel_size=3, stride=1, padding=1)
-        self.conv2 = nn.Conv2d(2, 4, kernel_size=3, stride=1, padding=1)
-        self.fc1 = nn.Linear(4 * 7 * 7, 64)
+        self.conv1 = nn.Conv2d(1, 8, kernel_size=3, stride=1, padding=1)
+        self.conv2 = nn.Conv2d(8, 16, kernel_size=3, stride=1, padding=1)
+        self.fc1 = nn.Linear(16 * 7 * 7, 64)
         self.fc2 = nn.Linear(64, 10)
+        self.dropout = nn.Dropout(0.05)  # Add dropout layer with dropout rate of 0.5
 
     def forward(self, x):
         x = F.relu(self.conv1(x))
@@ -36,11 +37,12 @@ class MNISTConvNet(nn.Module):
         x = F.max_pool2d(x, 2)
         x = x.view(x.size(0), -1)
         x = F.relu(self.fc1(x))
+        x = self.dropout(x)  # Apply dropout to the output of the first fully connected layer
         x = self.fc2(x)
         return x
 
 
-class MNISTConvNetTrainer:
+class MNISTConvNetTrainer():
 
     def __init__(self, model, train_loader, test_loader, lr=0.001, device="mps"):
         self.model = model
@@ -113,22 +115,38 @@ class MNISTConvNetTrainer:
 
 class MNISTFederatedClient:
 
-    def __init__(self, k: int, local_epochs: int, lr: float, model_state: Dict, device="cpu", dataset=None) -> None:
+    def __init__(
+            self, k: int, 
+            local_epochs: int, 
+            lr: float, 
+            device="cpu", 
+            dataset=None, 
+            n_samples=1000, 
+            weight_decay=1e-6, 
+            criterion=nn.CrossEntropyLoss(),
+            model=MNISTConvNet()
+        ) -> None:
+
         self.k = k
         self.lr = lr
         self.epochs = local_epochs
         self.device = torch.device(device)
-        self.model = MNISTConvNet()
-        self.model.load_state_dict(model_state)
-        self.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.lr)
-        self.criterion = nn.CrossEntropyLoss()
+        self.model = model
+        self.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.lr, weight_decay=weight_decay)
+        self.criterion = criterion
         self.train_loader = dataset
+        self.n_samples = n_samples  
+        # printu summary of all parameters
+        print(f"> Client {k} created, lr: {lr}, epochs: {local_epochs}, samples: {n_samples}, device: {device}, weight_decay: {weight_decay}")
+
 
 
     def eval(self, dataset: DataLoader):
         correct = 0
         total = 0
         loss = 0
+        # print batch size
+        print(f"Batch size: {dataset.batch_size}")
         with torch.no_grad():
             for images, labels in dataset:
                 images, labels = images.to(self.device), labels.to(self.device)
@@ -140,18 +158,27 @@ class MNISTFederatedClient:
 
         print(f"Local Acc: {correct/total}, Local Loss: {loss/len(dataset)}")
 
+    def _sample_data_iid(self):
+        subset = Subset(
+            self.train_loader.dataset, 
+            list(RandomSampler(self.train_loader.dataset, num_samples=self.n_samples)))
+        return DataLoader(subset, batch_size=32, shuffle=True)
 
-    def __call__(self):
-        # training with federated learning
+    def __call__(self, state_dict):
 
-       # train model
-        for epoch in range(self.epochs):
+        sample_data = self._sample_data_iid()
+
+        self.model.load_state_dict(state_dict)
+        # model to device
+        self.model.to(self.device)
+        for _ in range(self.epochs):
             self.model.train()
             epoch_loss = 0
             correct = 0
             total = 0
 
-            for images, labels in self.train_loader:
+            for images, labels in sample_data:
+                images, labels = images.to(self.device), labels.to(self.device)
                 self.optimizer.zero_grad()
                 outputs = self.model(images)
                 loss = self.criterion(outputs, labels)
@@ -163,9 +190,9 @@ class MNISTFederatedClient:
                 correct += (predicted == labels).sum().item()
                 total += labels.size(0)
 
-            epoch_loss = epoch_loss / len(self.train_loader)
+            epoch_loss = epoch_loss / len(sample_data)
             epoch_acc = correct / total
-            print(f"Local Epoch {epoch+1}, Loss: {epoch_loss}, Accuracy: {epoch_acc}, client: {self.k}, total: {total}")
+            #print(f"Local Epoch {epoch+1}, Loss: {epoch_loss}, Accuracy: {epoch_acc}, client: {self.k}, total: {total}")
 
         return self.model.state_dict()
 
@@ -173,41 +200,14 @@ class MNISTFederatedClient:
 class MNISTFederatedServer:
     def __init__(
         self,
-        n_clients: int,
-        t: int,
-        lr: float,
         model: nn.Module,
-        train_loader: DataLoader,
-        val_loader: DataLoader,
         test_loader: DataLoader,
-        criterion: nn.Module = nn.CrossEntropyLoss(),
-        C=1,
     ) -> None:
 
-        self.train_loader = train_loader
-        self.val_loader = val_loader
         self.test_loader = test_loader
-
-        self.k = n_clients
         self.global_model = model
-        self.lr = lr
-        self.C = C
-        self.m = max([self.C * self.k, 1])
-
-    def init_clients(self, num_clients, local_epochs, lr):
-        
-        self.k = num_clients
-        self.clients = []
-
-        for i in range(self.k):
-            self.clients.append(MNISTFederatedClient(
-                k=i, 
-                local_epochs=local_epochs, 
-                lr=lr, 
-                model_state=self.global_model.state_dict(), 
-                dataset=self.train_loader
-            )
-        )
+        self.criterion = nn.CrossEntropyLoss()
+                
 
     def update_global_model(self, local_states: List[Dict]):
         self.global_model.load_state_dict(self.aggregate(local_states))
@@ -232,16 +232,17 @@ class MNISTFederatedServer:
         return new_state
 
 
-    def start_train(self, clients, n_rounds):
+    def start_train(self, clients, n_rounds, n_jobs=1):
+        model_state = self.global_model.state_dict()   
+
         for _ in range(n_rounds):
-            local_states = []
-            
-            for client in clients:
-                print(f"Training client {client.k}")
-                s = client()
-                local_states.append(s)
+
+            local_states = Parallel(n_jobs=n_jobs)(
+                delayed(client)(model_state) for client in tqdm(clients, ncols=80)
+            )
 
             self.update_global_model(local_states)
+
             test_loss, test_acc = self.test()
             print(f"Round {_}, Test Loss: {test_loss}, Test Acc: {test_acc}")
             
@@ -289,6 +290,25 @@ def get_mnist_dataloader(batch_size):
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
 
     return train_loader, val_loader, test_loader
+
+
+def init_clients(num_clients, local_epochs, lr, train_dataset, n_samples=1000, device="cpu", weight_decay=1e-6, criterion=nn.CrossEntropyLoss(), model=MNISTConvNet()):
+
+    clients = []
+    for i in range(num_clients):
+        clients.append(
+            MNISTFederatedClient(
+                k=i, 
+                local_epochs=local_epochs, 
+                lr=lr, 
+                dataset=train_dataset,
+                n_samples=n_samples,
+                device=device,
+                weight_decay=weight_decay,
+        )
+    )
+        
+    return clients
 
 
 def save_model(model, path):
