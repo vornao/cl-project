@@ -8,13 +8,7 @@ import torch.nn.functional as F
 from typing import Tuple, Dict, List, Any
 from tqdm import tqdm  # type: ignore
 from joblib import Parallel, delayed
-
-# load config from../config.json
-def load_config():
-    import json
-    with open("../mnist_config.json", "r") as f:
-        config = json.load(f)
-    return config
+from utils import load_config
 
 
 config = load_config()
@@ -167,12 +161,14 @@ class MNISTFederatedClient:
     
     def _sample_data_noniid(self):
         # select a a key from the mnist dataset randomly
-        # random key
-        key = torch.randint(0, 10, (1,)).item()
-        # select all samples with that key
-        subset = [s for s in self.train_loader.dataset if s[1] == self.k % 10]
+        subset_a = [s for s in self.train_loader.dataset if s[1] == self.k % 10]
+        subset_b = [s for s in self.train_loader.dataset if s[1] == (self.k + 1) % 10]
         # sample n_samples from the subset
-        subset = Subset(subset, list(RandomSampler(subset, num_samples=self.n_samples)))
+        subset_a = Subset(subset_a, list(RandomSampler(subset_a, num_samples=self.n_samples//2)))
+        subset_b = Subset(subset_b, list(RandomSampler(subset_b, num_samples=self.n_samples//2)))
+
+        subset = torch.utils.data.ConcatDataset([subset_a, subset_b])
+    
         return DataLoader(subset, batch_size=32, shuffle=True)
 
     def __call__(self, state_dict ):
