@@ -2,7 +2,7 @@
 
 import matplotlib.pyplot as plt
 
-def plot_mnist(train, width=10, height=5):
+def plot_mnist(train, width=10, height=5, cmap='gray'): 
     imgs = []
     for i in range(10):
         for img, label in train:
@@ -14,7 +14,7 @@ def plot_mnist(train, width=10, height=5):
     fig, axs = plt.subplots(2, 5, figsize=(width, height))
     for i in range(10):
         ax = axs[i//5, i%5]
-        ax.imshow(imgs[i][0], cmap='gray')
+        ax.imshow(imgs[i][0], cmap=cmap)
         ax.set_title(f"Class {i}")
         ax.axis('off')
 
@@ -28,3 +28,4 @@ def load_config():
     with open("../mnist_config.json", "r") as f:
         config = json.load(f)
     return config
+
