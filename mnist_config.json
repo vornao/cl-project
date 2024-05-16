@@ -1,7 +1,7 @@
 {
     "datapath": "/Users/vornao/Desktop/unipi/CL/project/data",
     "client_config": {
-            "num_clients": 16,
+            "num_clients": 24,
             "local_epochs": 10,
             "lr": 1e-2,
             "train_dataset": "train",
