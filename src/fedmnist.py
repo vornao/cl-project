@@ -1,10 +1,10 @@
-from models import MNISTConvNet, MNISTFederatedServer, get_mnist_dataloader, init_clients
+from models import MNISTConvNet, FederatedServer, get_mnist_dataloader, init_clients
 
 import argparse, json
 
 train, val, test = get_mnist_dataloader(64)
 model  = MNISTConvNet()
-server = MNISTFederatedServer(model=model, test_loader=val)
+server = FederatedServer(model=model, test_loader=val)
 
 # add arguments
 parser = argparse.ArgumentParser(description='FedMNIST')

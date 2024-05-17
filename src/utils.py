@@ -113,4 +113,33 @@ def get_cifar10_dataloader(batch_size):
 
     return train_loader, val_loader, test_loader
 
+def get_flowers_dataloader(batch_size):
+    config = load_config()
+    tr = transforms.Compose(
+        [
+            transforms.Resize((224, 224)),
+            transforms.ToTensor(),
+            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+        ]
+    )
+
+    # download flowers 102 dataset
+    train_dataset = datasets.Flowers102(
+        root=config["datapath"], split="train", transform=tr, download=True
+    )
+    val_dataset = datasets.Flowers102(
+        root=config["datapath"], split="val", transform=tr, download=True
+    )
+    test_dataset = datasets.Flowers102(
+        root=config["datapath"], split="test", transform=tr, download=True
+    )
+
+    # create data loaders
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+
+    return train_loader, val_loader, test_loader
+
+
 

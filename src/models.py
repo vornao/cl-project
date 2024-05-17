@@ -13,6 +13,7 @@ from utils import load_config
 
 config = load_config()
 
+
 class ConvNet(nn.Module):
     def __init__(self):
         super(ConvNet, self).__init__()
@@ -62,7 +63,10 @@ class ConvNetTrainer():
         self.device = torch.device(device)
 
         self.model.to(self.device)
-        self.clients = {}
+        self.tr_losses = []
+        self.ts_losses = []
+        self.tr_accs = []
+        self.ts_accs = []
         print(f"Model created and moved to {device}")
 
     def train(self, num_epochs, earlystopping=False):    
@@ -78,8 +82,6 @@ class ConvNetTrainer():
             epoch_loss = 0
             correct = 0
             total = 0
-            tr_losses = []
-            ts_losses = []
             for images, labels in self.train_loader:
                 images, labels = images.to(self.device), labels.to(
                     self.device
@@ -100,11 +102,11 @@ class ConvNetTrainer():
 
             # compute test round
             test_loss, test_acc = self.test(self.test_loader)
-            tr_losses.append(epoch_loss)
-            ts_losses.append(test_loss)
+            self.tr_losses.append(epoch_loss)
+            self.ts_losses.append(test_loss)
 
             if earlystopping:
-                if early_stopping(val_loss=ts_losses, patience=5):
+                if early_stopping(val_loss=self.ts_losses, patience=5):
                     self.model.load_state_dict(best_weights)
                     break
             else:
@@ -112,10 +114,9 @@ class ConvNetTrainer():
 
             self.model.train()
 
-            #
             progress_bar.set_postfix_str(
                # setting postfix string with 3 decimal points
-                f"TL: {epoch_loss:.3f}, TA: {epoch_acc:.3f}, VL: {test_loss:.3f}, VA: {test_acc:.3f}"
+                f"Loss: {epoch_loss:.3f}, VL: {test_loss:.3f}, VA: {test_acc*100:.2f}"
             )
 
     def test(self, test_loader=None):
@@ -153,7 +154,7 @@ class FederatedClient:
             n_samples=1000, 
             weight_decay=1e-6, 
             criterion=nn.CrossEntropyLoss(),
-            model=ConvNet(),
+            model=None,
             sample_method="iid"
         ) -> None:
 
@@ -162,6 +163,9 @@ class FederatedClient:
         self.epochs = local_epochs
         self.device = torch.device(device)
         self.model = model
+        if model is None:
+            self.model = ConvNet()
+        
         self.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.lr, weight_decay=weight_decay)
         self.criterion = criterion
         self.train_loader = dataset
@@ -205,13 +209,13 @@ class FederatedClient:
     
         return DataLoader(subset, batch_size=32, shuffle=True)
     
-    def __sample_cifar10(self):
-        subset = Subset(
-            self.train_loader.dataset,
-            list(RandomSampler(self.train_loader.dataset, num_samples=self.n_samples))
-        )
-        # perform some data augmentation on cifar10 subset
-        return DataLoader(subset, batch_size=32, shuffle=True)
+    # def __sample_cifar10(self):
+    #     subset = Subset(
+    #         self.train_loader.dataset,
+    #         list(RandomSampler(self.train_loader.dataset, num_samples=self.n_samples))
+    #     )
+    #     # perform some data augmentation on cifar10 subset
+    #     return DataLoader(subset, batch_size=32, shuffle=True)
     
 
     def __call__(self, state_dict ):
@@ -256,7 +260,7 @@ class FederatedClient:
         }
 
 
-class MNISTFederatedServer:
+class FederatedServer:
     def __init__(
         self,
         model: nn.Module,
@@ -273,7 +277,7 @@ class MNISTFederatedServer:
     
 
     def aggregate(self, local_states: List[Dict]):
-        print(f"Aggregating {len(local_states)} local states\n")
+        #print(f"Aggregating {len(local_states)} local states\n")
         new_state = {}
 
         # initialize new state
@@ -286,7 +290,8 @@ class MNISTFederatedServer:
                 new_state[key] += state[key]
 
         for key in new_state.keys():
-            new_state[key] /= len(local_states) # assuming all clients have the same number of samples
+            l =  len(local_states)
+            new_state[key] = new_state[key] / len(local_states) # assuming all clients have the same number of samples
 
         return new_state
 
@@ -294,10 +299,11 @@ class MNISTFederatedServer:
     def start_train(self, clients, n_rounds, n_jobs=1):
         model_state = self.global_model.state_dict()   
         losses, accs = [], []
-        for _ in range(n_rounds):
-            
+
+        pbar = tqdm(range(n_rounds), ncols=80)
+        for _ in pbar:
             local_states = Parallel(n_jobs=n_jobs)(
-                delayed(client)(model_state) for client in tqdm(clients, ncols=80)
+                delayed(c)(model_state) for c in clients
             )
 
             local_states = [state["state_dict"] for state in local_states]
@@ -308,7 +314,7 @@ class MNISTFederatedServer:
             test_loss, test_acc = self.test()
             losses.append(test_loss)
             accs.append(test_acc)
-            print(f"Round {_}, Test Loss: {test_loss}, Test Acc: {test_acc}")
+            pbar.set_postfix_str(f"Loss: {test_loss:.3f}, Acc: {test_acc*100:.2f}")
         return losses, accs
             
 
@@ -331,92 +337,6 @@ class MNISTFederatedServer:
         return loss, accuracy
 
 
-# create MNIST dataloader
-def get_mnist_dataloader(batch_size):
-    # define transformations
-    transform = transforms.Compose(
-        [transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]
-    )
-
-    # download and load the MNIST dataset
-    train_dataset = datasets.MNIST(
-        root=config["datapath"], train=True, transform=transform, download=True
-    )
-    test_dataset = datasets.MNIST(
-        root=config["datapath"], train=False, transform=transform
-    )
-    train_dataset, val_dataset = torch.utils.data.random_split(
-        train_dataset, [50000, 10000]
-    )
-
-    # create data loaders
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
-
-    return train_loader, val_loader, test_loader
-
-
-def get_fashion_mnist_dataloader(batch_size):
-    # define transformations
-    transform = transforms.Compose(
-        [transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]
-    )
-
-    # download and load the MNIST dataset
-    train_dataset = datasets.FashionMNIST(
-        root=config["datapath"], train=True, transform=transform, download=True
-    )
-    test_dataset = datasets.FashionMNIST(
-        root=config["datapath"], train=False, transform=transform
-    )
-    train_dataset, val_dataset = torch.utils.data.random_split(
-        train_dataset, [50000, 10000]
-    )
-
-    # create data loaders
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
-
-    return train_loader, val_loader, test_loader
-
-
-def get_cifar10_dataloader(batch_size):
-    # define transformations
-    transform = transforms.Compose(
-        [
-            transforms.ToTensor(),
-            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
-        ]
-    )
-
-    train_transform = transforms.Compose([
-        transforms.RandomHorizontalFlip(p=0.5),
-        transforms.RandomCrop(32, padding=4),
-        transforms.ToTensor(),
-        transforms.Normalize([0, 0, 0], [1, 1, 1])
-    ])
-
-    # download and load the CIFAR-10 dataset
-    train_dataset = datasets.CIFAR10(
-        root=config["datapath"], train=True, transform=train_transform, download=True
-    )
-    test_dataset = datasets.CIFAR10(
-        root=config["datapath"], train=False, transform=transform
-    )
-    train_dataset, val_dataset = torch.utils.data.random_split(
-        train_dataset, [45000, 5000]
-    )
-
-    # create data loaders
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
-
-    return train_loader, val_loader, test_loader
-
-
 def init_clients(num_clients, local_epochs, lr, train_dataset, n_samples=1000, device="cpu", weight_decay=1e-6, criterion=nn.CrossEntropyLoss(), model=ConvNet(), sample_method="iid"):
 
     clients = []
@@ -431,6 +351,7 @@ def init_clients(num_clients, local_epochs, lr, train_dataset, n_samples=1000, d
                 device=device,
                 weight_decay=weight_decay,
                 sample_method=sample_method,
+                model=model,
         )
     )
         
