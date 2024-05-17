@@ -1,5 +1,7 @@
 
-
+from torch.utils.data import DataLoader
+from torchvision import datasets, transforms
+import torch
 import matplotlib.pyplot as plt
 
 def plot_mnist(train, width=10, height=5, cmap='gray'): 
@@ -28,4 +30,87 @@ def load_config():
     with open("../mnist_config.json", "r") as f:
         config = json.load(f)
     return config
+
+
+# create MNIST dataloader
+def get_mnist_dataloader(batch_size):
+    config = load_config()
+    # define transformations
+    transform = transforms.Compose(
+        [transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]
+    )
+
+    # download and load the MNIST dataset
+    train_dataset = datasets.MNIST(
+        root=config["datapath"], train=True, transform=transform, download=True
+    )
+    test_dataset = datasets.MNIST(
+        root=config["datapath"], train=False, transform=transform
+    )
+    train_dataset, val_dataset = torch.utils.data.random_split(
+        train_dataset, [50000, 10000]
+    )
+
+    # create data loaders
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+
+    return train_loader, val_loader, test_loader
+
+
+def get_fashion_mnist_dataloader(batch_size):
+    config = load_config()
+    # define transformations
+    transform = transforms.Compose(
+        [transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]
+    )
+
+    # download and load the MNIST dataset
+    train_dataset = datasets.FashionMNIST(
+        root=config["datapath"], train=True, transform=transform, download=True
+    )
+    test_dataset = datasets.FashionMNIST(
+        root=config["datapath"], train=False, transform=transform
+    )
+    train_dataset, val_dataset = torch.utils.data.random_split(
+        train_dataset, [50000, 10000]
+    )
+
+    # create data loaders
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+
+    return train_loader, val_loader, test_loader
+
+
+def get_cifar10_dataloader(batch_size):
+    config = load_config()
+    # define transformations
+    transform = transforms.Compose(
+        [
+            transforms.ToTensor(),
+            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+        ]
+    )
+
+    # download and load the CIFAR-10 dataset
+    train_dataset = datasets.CIFAR10(
+        root=config["datapath"], train=True, transform=transform, download=True
+    )
+    test_dataset = datasets.CIFAR10(
+        root=config["datapath"], train=False, transform=transform
+    )
+    train_dataset, val_dataset = torch.utils.data.random_split(
+        train_dataset, [45000, 5000]
+    )
+
+    # create data loaders
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+
+    return train_loader, val_loader, test_loader
+
 

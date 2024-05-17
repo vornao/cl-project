@@ -39,25 +39,47 @@ class ConvNet(nn.Module):
 
 class ConvNetTrainer():
 
-    def __init__(self, model, train_loader, test_loader, lr=0.001, weight_decay=1e-6, device="mps"):
+    def __init__(self, model, train_loader, test_loader, lr=0.001, weight_decay=1e-6, device="mps", optimizer="SGD"):
         self.model = model
         self.train_loader = train_loader
         self.test_loader = test_loader
-        self.optimizer = torch.optim.SGD(lr=lr, params=self.model.parameters(), weight_decay=weight_decay)
+
+        if optimizer == "SGD":
+            print("Using SGD")
+            self.optimizer = torch.optim.SGD(lr=lr, params=self.model.parameters(), weight_decay=weight_decay)
+        elif optimizer == "Adam":
+            print("Using Adam")
+            self.optimizer = torch.optim.Adam(lr=lr, params=self.model.parameters(), weight_decay=weight_decay)
+        elif optimizer == "AdamW":
+            print("Using AdamW")
+            self.optimizer = torch.optim.AdamW(lr=lr, params=self.model.parameters(), weight_decay=weight_decay)
+        else:
+            raise ValueError("Optimizer not supported")
+        
+
         self.criterion = nn.CrossEntropyLoss()
+        self.criterion = nn.CrossEntropyLoss() 
         self.device = torch.device(device)
 
         self.model.to(self.device)
         self.clients = {}
         print(f"Model created and moved to {device}")
 
-    def train(self, num_epochs):
+    def train(self, num_epochs, earlystopping=False):    
         self.model.train()
+        best_weights = self.model.state_dict()  
 
-        for epoch in tqdm(range(num_epochs), ncols=80):
+        print(f'Total number of trainable parameters: {
+            sum(p.numel() for p in self.model.parameters() if p.requires_grad)
+        }')
+
+        progress_bar = tqdm(range(num_epochs), ncols=128)
+        for epoch in progress_bar:
             epoch_loss = 0
             correct = 0
             total = 0
+            tr_losses = []
+            ts_losses = []
             for images, labels in self.train_loader:
                 images, labels = images.to(self.device), labels.to(
                     self.device
@@ -78,10 +100,22 @@ class ConvNetTrainer():
 
             # compute test round
             test_loss, test_acc = self.test(self.test_loader)
+            tr_losses.append(epoch_loss)
+            ts_losses.append(test_loss)
+
+            if earlystopping:
+                if early_stopping(val_loss=ts_losses, patience=5):
+                    self.model.load_state_dict(best_weights)
+                    break
+            else:
+                best_weights = self.model.state_dict()
+
             self.model.train()
 
-            print(
-                f"Epoch {epoch+1}, Loss: {epoch_loss}, Accuracy: {epoch_acc}, Val Loss: {test_loss}, Val Acc: {test_acc}"
+            #
+            progress_bar.set_postfix_str(
+               # setting postfix string with 3 decimal points
+                f"TL: {epoch_loss:.3f}, TA: {epoch_acc:.3f}, VL: {test_loss:.3f}, VA: {test_acc:.3f}"
             )
 
     def test(self, test_loader=None):
@@ -170,6 +204,15 @@ class FederatedClient:
         subset = torch.utils.data.ConcatDataset([subset_a, subset_b])
     
         return DataLoader(subset, batch_size=32, shuffle=True)
+    
+    def __sample_cifar10(self):
+        subset = Subset(
+            self.train_loader.dataset,
+            list(RandomSampler(self.train_loader.dataset, num_samples=self.n_samples))
+        )
+        # perform some data augmentation on cifar10 subset
+        return DataLoader(subset, batch_size=32, shuffle=True)
+    
 
     def __call__(self, state_dict ):
 
@@ -348,9 +391,16 @@ def get_cifar10_dataloader(batch_size):
         ]
     )
 
+    train_transform = transforms.Compose([
+        transforms.RandomHorizontalFlip(p=0.5),
+        transforms.RandomCrop(32, padding=4),
+        transforms.ToTensor(),
+        transforms.Normalize([0, 0, 0], [1, 1, 1])
+    ])
+
     # download and load the CIFAR-10 dataset
     train_dataset = datasets.CIFAR10(
-        root=config["datapath"], train=True, transform=transform, download=True
+        root=config["datapath"], train=True, transform=train_transform, download=True
     )
     test_dataset = datasets.CIFAR10(
         root=config["datapath"], train=False, transform=transform
@@ -367,12 +417,12 @@ def get_cifar10_dataloader(batch_size):
     return train_loader, val_loader, test_loader
 
 
-def init_clients(num_clients, local_epochs, lr, train_dataset, n_samples=1000, device="cpu", weight_decay=1e-6, criterion=nn.CrossEntropyLoss(), model=MNISTConvNet(), sample_method="iid"):
+def init_clients(num_clients, local_epochs, lr, train_dataset, n_samples=1000, device="cpu", weight_decay=1e-6, criterion=nn.CrossEntropyLoss(), model=ConvNet(), sample_method="iid"):
 
     clients = []
     for i in range(num_clients):
         clients.append(
-            MNISTFederatedClient(
+            FederatedClient(
                 k=i, 
                 local_epochs=local_epochs, 
                 lr=lr, 
@@ -385,6 +435,13 @@ def init_clients(num_clients, local_epochs, lr, train_dataset, n_samples=1000, d
     )
         
     return clients
+
+
+def early_stopping(val_loss, patience=5):
+    if len(val_loss) > patience:
+        if all(val_loss[-1] > val_loss[-(i + 1)] for i in range(patience)):
+            return True
+    return False
 
 
 def save_model(model, path):
