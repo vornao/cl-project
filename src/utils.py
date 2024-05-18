@@ -1,10 +1,10 @@
-
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 import torch
 import matplotlib.pyplot as plt
 
-def plot_mnist(train, width=10, height=5, cmap='gray'): 
+
+def plot_mnist(train, width=10, height=5, cmap="gray"):
     imgs = []
     for i in range(10):
         for img, label in train:
@@ -12,21 +12,22 @@ def plot_mnist(train, width=10, height=5, cmap='gray'):
                 imgs.append(img[0])
                 break
 
-    #plot the images
+    # plot the images
     fig, axs = plt.subplots(2, 5, figsize=(width, height))
     for i in range(10):
-        ax = axs[i//5, i%5]
+        ax = axs[i // 5, i % 5]
         ax.imshow(imgs[i][0], cmap=cmap)
         ax.set_title(f"Class {i}")
-        ax.axis('off')
+        ax.axis("off")
 
     fig.suptitle("MNIST dataset")
     fig.tight_layout()
-    
+
 
 # load config from../config.json
 def load_config():
     import json
+
     with open("../mnist_config.json", "r") as f:
         config = json.load(f)
     return config
@@ -113,6 +114,7 @@ def get_cifar10_dataloader(batch_size):
 
     return train_loader, val_loader, test_loader
 
+
 def get_flowers_dataloader(batch_size):
     config = load_config()
     tr = transforms.Compose(
@@ -140,6 +142,3 @@ def get_flowers_dataloader(batch_size):
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
     return train_loader, val_loader, test_loader
-
-
-
