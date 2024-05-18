@@ -7,7 +7,7 @@ import torch.nn.functional as F
 
 from typing import Tuple, Dict, List, Any
 from tqdm import tqdm  # type: ignore
-from joblib import Parallel, delayed
+from joblib import Parallel, delayed # type: ignore
 from utils import load_config
 
 to_cpu = lambda x: x.cpu()
@@ -181,7 +181,7 @@ class ConvNetTrainer:
                 f"Loss: {epoch_loss:.3f}, VL: {test_loss:.3f}, VA: {test_acc*100:.2f}"
             )
 
-    def test(self, test_loader=None):
+    def test(self, test_loader):
         """
         Tests the model on the testing dataset.
 
@@ -262,12 +262,12 @@ class FederatedClient:
         k: int,
         local_epochs: int,
         lr: float,
+        model: nn.Module,
+        dataset: DataLoader,
         device="mps",
-        dataset=None,
         n_samples=1000,
         weight_decay=1e-6,
         criterion=nn.CrossEntropyLoss(),
-        model=None,
         sample_method="iid",
     ) -> None:
         """
@@ -337,7 +337,7 @@ class FederatedClient:
         """
         subset = Subset(
             self.train_loader.dataset,
-            list(RandomSampler(self.train_loader.dataset, num_samples=self.n_samples)),
+            list(RandomSampler(self.train_loader.dataset, num_samples=self.n_samples)), # type: ignore
         )
         return DataLoader(subset, batch_size=32, shuffle=True)
 
@@ -353,13 +353,13 @@ class FederatedClient:
         subset_b = [s for s in self.train_loader.dataset if s[1] == (self.k + 1) % 10]
         # sample n_samples from the subset
         subset_a = Subset(
-            subset_a, list(RandomSampler(subset_a, num_samples=self.n_samples // 2))
+            subset_a, list(RandomSampler(subset_a, num_samples=self.n_samples // 2))    # type: ignore
         )
         subset_b = Subset(
-            subset_b, list(RandomSampler(subset_b, num_samples=self.n_samples // 2))
+            subset_b, list(RandomSampler(subset_b, num_samples=self.n_samples // 2))    # type: ignore
         )
 
-        subset = torch.utils.data.ConcatDataset([subset_a, subset_b])
+        subset = torch.utils.data.ConcatDataset([subset_a, subset_b]) # type: ignore
 
         return DataLoader(subset, batch_size=32, shuffle=True)
 
@@ -498,7 +498,7 @@ class FederatedServer:
                 delayed(c)(model_state) for c in clients
             )
 
-            local_states = [state["state_dict"] for state in local_states]
+            local_states = [state["state_dict"] for state in local_states] # type: ignore
 
             self._update_global_model(local_states)
 
@@ -545,7 +545,7 @@ def init_clients(
     device="cpu",
     weight_decay=1e-6,
     criterion=nn.CrossEntropyLoss(),
-    model=ConvNet(),
+    model: nn.Module = ConvNet(),
     sample_method="iid",
 ):
     """
