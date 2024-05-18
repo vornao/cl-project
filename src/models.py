@@ -10,8 +10,9 @@ from tqdm import tqdm  # type: ignore
 from joblib import Parallel, delayed
 from utils import load_config
 
-
+to_cpu = lambda x: x.cpu()
 config = load_config()
+
 
 
 class ConvNet(nn.Module):
@@ -362,6 +363,8 @@ class FederatedServer:
             losses.append(test_loss)
             accs.append(test_acc)
             pbar.set_postfix_str(f"Loss: {test_loss:.3f}, Acc: {test_acc*100:.2f}")
+        
+        losses = list(map(to_cpu, losses))
         return losses, accs
             
 
