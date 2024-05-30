@@ -1,8 +1,9 @@
 # FedFromScratch
+
+![header](./assets/image.png)
 This repository contains the code for the project "Federated Learning from Scratch" for the course "Continual Learning" at the University of Pisa
 
 # Project structure
-
 ```
 .
 ├── README.md
