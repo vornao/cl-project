@@ -45,9 +45,7 @@ def plot_cifar10(train, width=10, height=5):
 
 # load config from../config.json
 def load_config():
-    import json
-    with open("./mnist_config.json", "r") as f:
-        config = json.load(f)
+    config = {"datapath": "../data"}
     return config
 
 
