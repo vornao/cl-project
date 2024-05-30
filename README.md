@@ -4,6 +4,7 @@ This repository contains the code for the project "Federated Learning from Scrat
 # Project structure
 
 ```
+.
 ├── README.md
 ├── histories
 │   ├── history_5e10c.pkl
@@ -20,12 +21,12 @@ This repository contains the code for the project "Federated Learning from Scrat
 │   ├── model5e10c_fashion.pth
 │   ├── model_niid.pth
 │   └── resnet18_cifar10.pth
+├── requirements.txt
 └── src
-    ├── fedmnist.py
-    ├── ft.py
+    ├── federated.py
+    ├── finetuning.py
     ├── models.py
     ├── report.ipynb
-    ├── trainers.py
     └── utils.py
 ```
 
@@ -43,7 +44,7 @@ After that, you can run the code by running the following command:
 python src/fedmnist.py [--help]
 ```
 
-The script will train a federated model on the MNIST dataset. You can specify the number of clients, the number of epochs, the batch size, the learning rate, the optimizer, the model, and the dataset. The script will save the model and the training history in the `models` and `histories` directories, respectively.
+The script will train a federated model on the MNIST dataset. You can specify the number of clients, the number of epochs, the batch size, the learning rate, the optimizer, the model, and the dataset.
 
 ```bash
 usage: fedmnist.py [-h] [--n_clients N_CLIENTS] [--local_epochs LOCAL_EPOCHS] [--lr LR] [--n_samples N_SAMPLES] [--device DEVICE] [--weight_decay WEIGHT_DECAY] [--iid IID] [--rounds ROUNDS] [--jobs JOBS]
@@ -66,3 +67,7 @@ options:
   --rounds ROUNDS       number of rounds to train for
   --jobs JOBS           number of jobs to run in parallel
 ```
+
+## Results
+
+Results of the experiments are reported in the norebook `report.ipynb`.
