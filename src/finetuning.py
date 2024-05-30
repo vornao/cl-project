@@ -1,24 +1,27 @@
 import torch
 import torch.nn as nn
-from utils import get_cifar10_dataloader, get_flowers_dataloader
+from utils import get_cifar10_dataloader
 from models import ConvNetTrainer
 
 # import efficientnet from torchvision models
-from torchvision.models import (
+from torchvision.models import (  # type: ignore
     resnet18,
     ResNet18_Weights,
     efficientnet_b0,
     EfficientNet_B0_Weights,
-)
+) 
 
 import argparse
 
 # add argument for tuning only last layer
-parser = argparse.ArgumentParser(description="Train a model on CIFAR-10")
+parser = argparse.ArgumentParser(description="Train a model on CIFAR-10 (Fine tuning)")
 parser.add_argument("--lastonly", action="store_true", help="Tune only the last layer")
 parser.add_argument("--batch_size", type=int, default=512, help="Batch size")
 parser.add_argument("--epochs", type=int, default=10, help="Number of epochs")
 parser.add_argument("--model", type=str, default="effnet", help="Model to train")
+parser.add_argument("--device", type=str, default="mps", help="Device to train on")
+parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
+parser.add_argument("--weight_decay", type=float, default=1e-6, help="Weight decay")
 parser.add_argument(
     "--savepath",
     type=str,
@@ -29,10 +32,12 @@ args = parser.parse_args()
 
 
 if __name__ == "__main__":
-    # save the model
-    # freeze all layers except the last one
-    # for param in effnet.parameters():
-    #     param.requires_grad = False
+
+
+    """
+    Fine-tuning a model on CIFAR-10
+    """
+
     train, valid, test = get_cifar10_dataloader(args.batch_size)
     # resnet = resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)
     if args.model == "resnet":
@@ -52,9 +57,9 @@ if __name__ == "__main__":
     trainer = ConvNetTrainer(
         model=model,
         optimizer="AdamW",
-        lr=1e-3,
-        weight_decay=1e-6,
-        device="mps",
+        lr=args.lr,
+        weight_decay=args.weight_decay,
+        device=args.device,
         train_loader=train,
         test_loader=valid,
     )

@@ -13,6 +13,7 @@ from utils import load_config
 to_cpu = lambda x: x.cpu()
 config = load_config()
 
+# note: comments are auto-generated
 
 class ConvNet(nn.Module):
     """
