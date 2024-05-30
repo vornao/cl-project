@@ -13,7 +13,6 @@ This repository contains the code for the project "Federated Learning from Scrat
 │   ├── history_5e20c.pkl
 │   ├── history_5e5c.pkl
 │   └── history_niid.pkl
-├── mnist_config.json
 ├── models
 │   ├── efficientnet_b0.pth
 │   ├── efficientnet_cifar10.pth

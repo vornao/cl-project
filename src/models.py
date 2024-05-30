@@ -370,7 +370,7 @@ class FederatedClient:
 
         Args:
             state_dict (dict): The state dictionary of the model.
-
+        
         Returns:
             dict: The state dictionary of the trained model and the training history.
         """
